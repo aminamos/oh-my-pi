@@ -405,6 +405,11 @@ export function createAcpSessionFactory(args: AcpSessionFactoryOptions): AcpSess
 	};
 }
 
+/** Returns whether the startup request should enter vibe mode. */
+export function shouldEnableVibeAtStartup(requested: boolean, alreadyEnabled: boolean): boolean {
+	return requested && !alreadyEnabled;
+}
+
 async function runInteractiveMode(
 	session: AgentSession,
 	version: string,
@@ -422,6 +427,7 @@ async function runInteractiveMode(
 	initialMessage?: string,
 	initialImages?: ImageContent[],
 	joinLink?: string,
+	vibe?: boolean,
 ): Promise<void> {
 	const mode = new InteractiveMode(
 		session,
@@ -501,6 +507,11 @@ async function runInteractiveMode(
 	// `/join` so collab guards and error rendering stay in one place.
 	if (joinLink !== undefined) {
 		await executeBuiltinSlashCommand(`/join ${joinLink}`, { ctx: mode });
+	}
+	// `--vibe` is idempotent across resumed sessions: mode reconciliation may
+	// already have restored vibe mode from the session's persisted mode entry.
+	if (shouldEnableVibeAtStartup(vibe === true, mode.vibeModeEnabled)) {
+		await executeBuiltinSlashCommand("/vibe", { ctx: mode });
 	}
 
 	if (initialMessage !== undefined) {
@@ -1619,6 +1630,7 @@ export async function runRootCommand(
 				initialMessage,
 				initialImages,
 				parsedArgs.join,
+				parsedArgs.vibe,
 			);
 		} else {
 			// Branch-only single-shot runner: keep print-mode code out of normal interactive startup.

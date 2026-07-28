@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+### Added
+
+- Added `--vibe` to start interactive sessions in vibe mode. The startup dispatch is idempotent when resuming a session that already restored vibe mode.
 
 ## [17.1.7] - 2026-07-27
 

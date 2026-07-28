@@ -54,6 +54,8 @@ export interface Args {
 	fork?: string;
 	/** Collab link to join at startup (set by the `join` subcommand; no CLI flag). */
 	join?: string;
+	/** Start interactive sessions in vibe mode. */
+	vibe?: boolean;
 	models?: string[];
 	tools?: string[];
 	noTools?: boolean;
@@ -235,6 +237,8 @@ export function parseArgs(inputArgs: string[], extensionFlags?: Map<string, { ty
 			result.noLsp = true;
 		} else if (arg === "--no-pty") {
 			result.noPty = true;
+		} else if (arg === "--vibe") {
+			result.vibe = true;
 		} else if (arg === "--hide-thinking") {
 			result.hideThinking = true;
 		} else if (arg === "--advisor") {

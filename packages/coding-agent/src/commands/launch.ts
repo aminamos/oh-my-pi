@@ -130,6 +130,9 @@ export default class Index extends Command {
 		advisor: Flags.boolean({
 			description: "Enable the advisor runtime (passively reviews each turn and injects notes)",
 		}),
+		vibe: Flags.boolean({
+			description: "Start in vibe mode (already-active vibe mode is preserved when resuming)",
+		}),
 		hook: Flags.string({
 			description: "Load a hook/extension file (can be used multiple times)",
 			multiple: true,

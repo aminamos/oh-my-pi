@@ -295,6 +295,7 @@ export const VALUELESS_FLAGS: ReadonlySet<string> = new Set([
 	"--no-lsp",
 	"--no-pty",
 	"--hide-thinking",
+	"--vibe",
 	"--advisor",
 	"--prewalk",
 	"--no-prewalk",
