@@ -4449,6 +4449,19 @@ export class InteractiveMode implements InteractiveModeContext {
 	}
 
 	#vibeSessionTransitionBlocked(): boolean {
+		// Allow /new and /drop to proceed by exiting vibe mode cleanly first.
+		// Other transitions (fork, move) still require exiting vibe mode entirely.
+		if (this.vibeModeEnabled) {
+			// Exit vibe mode cleanly: set state synchronously, fire-and-forget async cleanup.
+			this.vibeModeEnabled = false;
+			this.session.setVibeModeState(undefined);
+			this.#vibeModePreviousTools = undefined;
+			this.#vibeModeOwnerScope = undefined;
+			this.lastAssistantUsage = undefined;
+			// Fire-and-forget: fully terminate vibe worker sessions in background.
+			void this.#exitVibeMode();
+			return false;
+		}
 		if (!this.vibeModeEnabled) return false;
 		this.showWarning("Exit vibe mode first.");
 		return true;
