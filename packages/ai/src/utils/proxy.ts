@@ -172,6 +172,50 @@ export function wrapFetchForProxy(fetchImpl: FetchImpl, provider: string): Fetch
 	return wrapped;
 }
 
+/**
+ * Wraps a fetch implementation to inject proxy options for a known target URL,
+ * honoring provider-specific, standard (HTTPS_PROXY and friends), and NO_PROXY
+ * rules. Unparseable URLs fall back to provider-only resolution.
+ */
+export function wrapFetchForUrl(fetchImpl: FetchImpl, provider: string, url: string | URL): FetchImpl {
+	let target: URL | undefined;
+	try {
+		target = url instanceof URL ? url : new URL(url);
+	} catch {
+		target = undefined;
+	}
+	if (!target) {
+		return wrapFetchForProxy(fetchImpl, provider);
+	}
+	const proxyUrl = getProxyForUrl(provider, target);
+	if (!proxyUrl) {
+		return fetchImpl;
+	}
+
+	const wrapped = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+		const urlStr = input instanceof Request ? input.url : input.toString();
+		let urlObj: URL;
+		try {
+			urlObj = new URL(urlStr);
+		} catch {
+			// Fallback to calling fetch unmodified if URL is unparseable
+			return fetchImpl(input, init);
+		}
+
+		if (shouldBypassProxy(urlObj)) {
+			return fetchImpl(input, init);
+		}
+
+		const mergedInit = { ...(init ?? {}), proxy: proxyUrl };
+		return fetchImpl(input, mergedInit);
+	};
+
+	if (fetchImpl.preconnect) {
+		wrapped.preconnect = fetchImpl.preconnect;
+	}
+	return wrapped;
+}
+
 export interface ConnectProxiedSocketOptions {
 	/** Caller cancellation for the proxy TCP/TLS handshake and CONNECT tunnel. */
 	signal?: AbortSignal;
