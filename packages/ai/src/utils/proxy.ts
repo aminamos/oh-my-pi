@@ -219,6 +219,21 @@ export function wrapFetchForProxy(fetchImpl: FetchImpl, provider: string): Fetch
 	return wrapFetchWithProxyUrl(fetchImpl, getProxyForProvider(provider));
 }
 
+/**
+ * Wraps a fetch implementation to inject proxy options for a known target URL,
+ * honoring provider-specific, standard (HTTPS_PROXY and friends), and NO_PROXY
+ * rules. Unparseable URLs fall back to provider-only resolution.
+ */
+export function wrapFetchForUrl(fetchImpl: FetchImpl, provider: string, url: string | URL): FetchImpl {
+	let target: URL | undefined;
+	try {
+		target = url instanceof URL ? url : new URL(url);
+	} catch {
+		target = undefined;
+	}
+	return wrapFetchWithProxyUrl(fetchImpl, target ? getProxyForUrl(provider, target) : getProxyForProvider(provider));
+}
+
 let globalProxyFetchInstalled = false;
 
 /** Test seam: re-arms {@link installGlobalProxyFetch}. */

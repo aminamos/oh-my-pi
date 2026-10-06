@@ -1,11 +1,12 @@
 import { type AuthStorage, isAuthRetryableError, type OAuthAccess, withOAuthAccess } from "@oh-my-pi/pi-ai";
-import { getProxyForUrl, wrapFetchForProxy } from "@oh-my-pi/pi-ai/utils/proxy";
+import { getProxyForUrl, wrapFetchForUrl } from "@oh-my-pi/pi-ai/utils/proxy";
 import {
 	CODEX_BASE_URL,
 	CODEX_CLIENT_VERSION,
 	getCodexAccountId,
 	OPENAI_HEADERS,
 } from "@oh-my-pi/pi-catalog/wire/codex";
+import { $env } from "@oh-my-pi/pi-utils";
 import { LiveWebRtcPeer } from "@oh-my-pi/pi-natives";
 import { generateCodexAttestation } from "./attestation";
 import {
@@ -15,7 +16,17 @@ import {
 	parseLiveServerEvent,
 } from "./protocol";
 
-const SIGNALING_URL = `${CODEX_BASE_URL}/codex/realtime/calls?intent=quicksilver&architecture=avas`;
+const SIGNALING_PATH = "/codex/realtime/calls?intent=quicksilver&architecture=avas";
+
+/** Resolve the Codex live signaling URL, honoring env overrides for self hosted gateways and debugging. */
+export function resolveLiveSignalingUrl(): string {
+	const full = ($env.PI_CODEX_LIVE_SIGNALING_URL ?? $env.CODEX_LIVE_SIGNALING_URL)?.trim();
+	if (full) return full;
+	const base = ($env.PI_CODEX_BASE_URL ?? $env.CODEX_BASE_URL)?.trim().replace(/\/+$/, "");
+	if (base) return `${base}${SIGNALING_PATH}`;
+	return `${CODEX_BASE_URL}${SIGNALING_PATH}`;
+}
+
 const MAX_ERROR_BODY_LENGTH = 2_048;
 const SIDEBAND_CONNECT_ATTEMPTS = 5;
 const SIDEBAND_CONNECT_TIMEOUT_MS = 15_000;
@@ -103,6 +114,20 @@ function boundedErrorBody(body: string, statusText: string): string {
 	if (!normalized) return statusText || "empty response body";
 	if (normalized.length <= MAX_ERROR_BODY_LENGTH) return normalized;
 	return `${normalized.slice(0, MAX_ERROR_BODY_LENGTH)}…`;
+}
+
+function responseHost(requestUrl: string, responseUrl: string | undefined): string {
+	const actual = responseUrl?.trim() || requestUrl;
+	try {
+		return new URL(actual).host;
+	} catch {
+		return requestUrl;
+	}
+}
+
+function signalingSentToLocalHost(host: string): boolean {
+	const name = host.split(":")[0]?.toLowerCase() ?? "";
+	return name === "localhost" || name === "127.0.0.1" || name === "::1" || name === "[::1]";
 }
 
 function isAuthError(error: unknown): boolean {
@@ -208,8 +233,9 @@ export class CodexLiveTransport {
 			Accept: "*/*",
 			"Content-Type": "application/json",
 		});
-		const fetchImpl = wrapFetchForProxy(fetch, LIVE_PROVIDER);
-		const response = await fetchImpl(SIGNALING_URL, {
+		const signalingUrl = resolveLiveSignalingUrl();
+		const fetchImpl = wrapFetchForUrl(fetch, LIVE_PROVIDER, signalingUrl);
+		const response = await fetchImpl(signalingUrl, {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
@@ -221,6 +247,16 @@ export class CodexLiveTransport {
 		const responseBody = await response.text();
 		if (!response.ok) {
 			const detail = boundedErrorBody(responseBody, response.statusText);
+			if (response.status === 404) {
+				const host = responseHost(signalingUrl, response.url);
+				const hint = signalingSentToLocalHost(host)
+					? " (local host detected: verify PI_CODEX_LIVE_SIGNALING_URL or PI_CODEX_BASE_URL, plus PI_PROXY and HTTPS_PROXY settings)"
+					: " (upstream host: the realtime path may be retired or gated for this account or client version)";
+				throw new LiveSignalingError(
+					response.status,
+					`Codex live signaling failed (404) at host ${host}: ${detail}${hint}`,
+				);
+			}
 			throw new LiveSignalingError(response.status, `Codex live signaling failed (${response.status}): ${detail}`);
 		}
 		const answer = responseBody;

@@ -14,6 +14,7 @@ import {
 	isLocalOrMetadataHost,
 	shouldBypassProxy,
 	wrapFetchForProxy,
+	wrapFetchForUrl,
 } from "@oh-my-pi/pi-ai/utils/proxy";
 
 const PROXY = "http://127.0.0.1:24560";
@@ -296,6 +297,53 @@ describe("wrapFetchForProxy", () => {
 		Bun.env.PI_PROXY_WRAP_BADURL = PROXY;
 		const { fetch, calls } = makeCapture();
 		await wrapFetchForProxy(fetch, "wrap-badurl")("not a url");
+		expect(calls).toHaveLength(1);
+		expect(calls[0].proxy).toBeUndefined();
+	});
+});
+
+describe("wrapFetchForUrl", () => {
+	function makeCapture(): { fetch: FetchImpl; calls: Array<{ url: string; proxy: unknown }> } {
+		const calls: Array<{ url: string; proxy: unknown }> = [];
+		const fetch: FetchImpl = async (input, init) => {
+			const url = input instanceof Request ? input.url : input.toString();
+			calls.push({ url, proxy: (init as { proxy?: unknown } | undefined)?.proxy });
+			return new Response("ok");
+		};
+		return { fetch, calls };
+	}
+
+	it("honors HTTPS_PROXY for an https target with no provider proxy set", async () => {
+		Bun.env.HTTPS_PROXY = "http://secure-proxy:8080";
+		const target = "https://chatgpt.com/backend-api/codex/realtime/calls";
+		const { fetch, calls } = makeCapture();
+		await wrapFetchForUrl(fetch, "wrap-url-standard", target)(target);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].proxy).toBe("http://secure-proxy:8080");
+	});
+
+	it("prefers the provider-specific var over HTTPS_PROXY", async () => {
+		Bun.env.PI_PROXY_URL_PREC = PROXY;
+		Bun.env.HTTPS_PROXY = "http://secure-proxy:8080";
+		const target = "https://chatgpt.com/backend-api/codex/realtime/calls";
+		const { fetch, calls } = makeCapture();
+		await wrapFetchForUrl(fetch, "url-prec", target)(target);
+		expect(calls[0].proxy).toBe(PROXY);
+	});
+
+	it("bypasses the proxy for a NO_PROXY target", async () => {
+		Bun.env.HTTPS_PROXY = "http://secure-proxy:8080";
+		Bun.env.NO_PROXY = "chatgpt.com";
+		const target = "https://chatgpt.com/backend-api/codex/realtime/calls";
+		const { fetch, calls } = makeCapture();
+		await wrapFetchForUrl(fetch, "url-noproxy", target)(target);
+		expect(calls[0].proxy).toBeUndefined();
+	});
+
+	it("sends no proxy when nothing is configured", async () => {
+		const target = "https://chatgpt.com/backend-api/codex/realtime/calls";
+		const { fetch, calls } = makeCapture();
+		await wrapFetchForUrl(fetch, "url-none", target)(target);
 		expect(calls).toHaveLength(1);
 		expect(calls[0].proxy).toBeUndefined();
 	});
